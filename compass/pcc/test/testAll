@@ -1,0 +1,19 @@
+#!/bin/sh
+
+cd ..
+echo -n "Starting tests"
+for i in `ls test/*.cp | sed s/^test\\\/// | sed s/\.cp$//`
+do
+    echo -n .
+    rm -f test/$i.test
+    ((echo $i:
+    test/testTest $1 $i) 2>> test/$i.tmp >> test/$i.tmp
+    mv test/$i.tmp test/$i.test) &
+done
+echo " done."
+for i in `ls test/*.cp | sed s/^test\\\/// | sed s/\.cp$//`
+do
+    until [ -f test/$i.test ]; do sleep 0; done
+    cat test/$i.test
+    rm test/$i.test
+done

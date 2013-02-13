@@ -1,0 +1,4 @@
+Making strings more efficient:
+* allowing you to embed such byte-arrays directly into a bytecode file
+* implementing many operations on this byte-array quickly:
+    * concatenate

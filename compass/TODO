@@ -1,0 +1,90 @@
+For version 0.2:
+Separate ^ and ^^ for different semantics of returning, whether it returns
+from the closest block ASAP (^) or waits until the end of the method (^^).
+
+Handle divisions by zero.
+
+LinkedList (test)
+HashMap
+SortingMap (sorting.cp)
+HashSet
+SortedSet
+BoringBag
+String
+Symbol
+Revise spacing style guide.
+Start other style stuff style guide.
+Write $Filter if we want to
+Write many test cases.
+Figure out standard set of exceptions.
+#addAllFirst:
+#addAllLast:
+#[~~]
+#:[~~]=
+#asMap
+#asSet
+#asBag
+#indexOf:
+#asString
+#asCharacter (does something rather different from #asString for an integer)
+#asSymbol
+Selector literals coloured purple.
+
+For version 0.3:
+Make all expression lists end in commas
+* Should at least be a warning
+* Might want to make it an error, what with () and [] ambiguities
+
+Give #() sane semantics
+* Give methods an array which has all the arguments in it.
+* Figure out a way for the bytecode to handle it (write a wrapper in bytecode)
+
+Give all collections iterators with their looping/filtering/reducing code.
+* This means lookup collections are no longer special, and lose their very,
+very "special" separate implementations.
+* "loop iterators" are stupider than normal ones.
+* This means looping over stuff has to survive "delete" - somehow.
+
+Make exceptions actually work "the right way" in the bytecode
+* Print tracebacks.
+* Have default handler.
+* Make the bytecode generate (some) exceptions.
+
+Allow block literals to be asked how many arguments they take
+* It's OK to give them too many arguments.
+* Not too few.
+
+Fix all TODO's and commented-out "better" implementations
+
+Make documentation refinements better
+
+Do audit of aliasing documentation: restrict, etc.
+
+Write compiler in Compass
+
+Implement abstract, packages, securelevels for real.
+
+Implement immutability.
+
+Collections 2.0: consistent approach to immutability, implementations,
+extending collections in user code, functional style.
+
+Implement a whole ton of algorithms from CS482.
+
+Write more test cases.
+
+Write large integers and fractions:
+* Write test cases.
+* Write number promotion.
+
+For Version 0.4:
+Output assembly
+* no optimisations yet
+* x86-64 only for right now.
+
+Handle $Immutable and #freeze and friends.
+
+For Version 0.5:
+Handle "modes" and "guards".
+
+Start writing optimisations/other target architectures.

@@ -1,0 +1,145 @@
+#ifndef BYTECODE_OBJECT_IH
+#define BYTECODE_OBJECT_IH
+
+#include <stdlib.h>
+#include <stdint.h>
+
+#include "debug.h"
+#include "Object.h"
+#include "ByteArray.h"
+
+inline
+Object::Object(uint64_t new_ivarc) {
+    ivarc = new_ivarc;
+    if(ivarc != -1) {
+	for(int i = 0; i < ivarc; ++i) {
+	    new (ivars + i) Value;
+	}
+    }
+}
+
+inline MethodTable &
+Object::get_method_table() const {
+    return *method_table;
+}
+
+inline Location<MethodTable>
+Object::get_method_table_location() const {
+    return method_table;
+}
+
+inline void
+Object::set_method_table(Location<MethodTable> new_method_table) {
+    method_table = new_method_table;
+}
+
+inline Value &
+Object::operator[](int which) {
+    assert(which < ivarc);
+    return ivars[which];
+}
+
+inline const Value &
+Object::operator[](int which) const {
+    assert(which < ivarc);
+    return ivars[which];
+}
+
+inline
+Object::~Object() {
+    if(ivarc == -1) {
+	ByteArray *arr = (ByteArray *)ivars;
+	arr->~ByteArray();
+    } else {
+	for(int i = 0; i < ivarc; ++i) {
+	    ivars[i].~Value();
+	}
+    }
+}
+
+inline void *
+Object::operator new(size_t base_size, uint64_t ivarc) {
+    if(ivarc == -1) {
+	return malloc(base_size + sizeof(ByteArray));
+    } else {
+	return malloc(base_size + ivarc*sizeof(Value));
+    }
+}
+
+inline void
+Object::operator delete(void *to_delete) {
+    free(to_delete);
+}
+
+inline void
+ObjectAllocation::deallocate_self() {
+    delete this;
+}
+
+inline ObjectAllocation *
+ObjectAllocation::allocate_object(uint64_t ivarc) {
+    return new ObjectAllocation(ivarc);
+}
+
+inline
+ObjectAllocation::ObjectAllocation(uint64_t ivarc)
+    : contents(new (ivarc) Object(ivarc)) {
+    }
+
+inline
+ObjectAllocation::~ObjectAllocation() {
+    delete contents;
+}
+
+inline void
+ObjectAllocation::for_each_child(GCMemFn ch) {
+    contents->for_each_child(ch);
+}
+
+inline void
+ObjectAllocation::set_all_refs_to_zero() {
+    contents->set_all_refs_to_zero();
+}
+
+inline void
+Object::for_each_child(GCMemFn ch) {
+    for(int i = 0; i < ivarc; ++i) {
+	ivars[i].invoke_garbage_collection_method(ch);
+    }
+}
+
+inline void
+Object::set_all_refs_to_zero() {
+    for(int i = 0; i < ivarc; ++i) {
+	ivars[i] = 0;
+    }
+}
+
+inline ByteArray
+Object::get_byte_array() {
+    if(ivarc == 2) {
+	return ByteArray((const char*)&*ivars[0], (int)ivars[1]);
+    } else {
+	assert(ivarc == -1);
+	return *(ByteArray *)ivars;
+    }
+}
+
+ObjectAllocation *
+ObjectAllocation::allocate_object(ByteArray &arr) {
+    ObjectAllocation *res = new ObjectAllocation(-1);
+    res->contents->set_byte_array(arr);
+    return res;
+}
+
+inline void
+Object::set_byte_array(ByteArray &arr) {
+    assert(ivarc == -1);
+    new ((void*)ivars) ByteArray(arr);
+}
+
+inline int
+Object::size() const {
+    return ivarc;
+}
+#endif

@@ -1,0 +1,1488 @@
+\documentclass[letterpaper,12pt]{article}
+
+\usepackage{hyperref}
+\usepackage{longtable}
+
+\newcommand{\Compass}{Compass}
+\newcommand{\SecureLevel}{Secure-Level}
+\newcommand{\securelevel}{\SecureLevel}
+\newcommand{\SecureLevels}{\SecureLevel{}s}
+
+\newcommand{\serializedCompass}{serialized \Compass}
+
+\newcommand{\code}[1]{\texttt{#1}}
+\renewcommand{\arg}[1]{\textit{#1}}
+
+\newcommand{\ro}{\code{ro}}
+\newcommand{\rw}{\code{rw}}
+
+\newcommand{\smt}{\code{\%}}
+\newcommand{\sblk}{\code{\#}}
+\newcommand{\sobj}{\code{@}}
+\newcommand{\sglb}{\code{\$}}
+\newcommand{\scmt}{\code{"}}
+
+\newcommand{\true}{\hyperref[true]{\code{true}}}
+\newcommand{\false}{\hyperref[false]{\code{false}}}
+\newcommand{\nil}{\hyperref[nil]{\code{nil}}}
+
+
+\begin{document}
+\title{Compass Bytecode Assembly and Semantics Specification}
+\author{Daniel Perelman}
+\maketitle
+
+\tableofcontents
+
+\section{Overview}
+
+The \serializedCompass{} format consists of sections beginning with sigils
+to indicate the type of section. A section ends when a sigil indicates
+that another section begins or when the file ends.
+
+\begin{tabular}{l|l}
+    Sigil  & Section Type \\
+    \hline
+    \smt   & Method table \\
+    \sblk  & Block (code) definition \\
+    \sobj  & Object definition \\
+    \sglb  & Global variable definition \\
+\end{tabular}
+
+The \smt, \sblk, \sobj, and \sglb{} sigils are all immediately followed
+by the name of the section, which must be alone on the line, and which
+may only contain alpha-numeric characters.
+Whitespace is not allowed in names. Names are case-sensitive.
+Repeat names are not allowed, but the sigil is considered part of the name.
+That is, \smt\code{Object}, \sobj\code{Object}, and \sglb\code{Object}
+may all be defined (and probably will be).
+
+Whitespace at the start and end of any line is ignored. Comments,
+which start with a \scmt{} symbol (``double quote'')
+and go to the end of the line,
+should be treated as whitespace.
+
+A special block named \code{\sblk{}initialize} is run with a self of
+the value \nil{} to start the program. This block is required.
+
+\section{Block Code Format}
+
+\newcommand{\mn}[1]{\hyperref[s:#1]{\code{\textbf{#1}}}}
+\newcommand{\tableheader}[1]{\textbf{#1}}
+\newcommand{\tsecheader}[1]{\hline & \textit{#1}}
+
+Blocks consist of an identifier written on the first line beginning with
+a hash (`\sblk') followed by an op{tional temporaries count line
+followed by a list of instructions, exactly one per line.
+
+The temporaries count line looks like \code{Temporaries} \arg{n}, which
+specifies a minimum of \arg{n} temporaries numbered 0 through $n-1$.
+Note that the temporaries line only applies to blocks called as methods.
+If used as a block (via \mn{Block}), then the block uses the temporaries
+space allocated for the out{er method.
+
+Instructions consist of a mnemonic, which is case-sensitive, and usually
+upper-case, and the instruction's arguments, which are defined by the
+instruction.
+
+Semantically, all blocks work on their own stack. Blocks called as methods
+request allocation for their own temporaries, and blocks called as blocks
+use the out{er method's temporaries. Blocks called as methods have access to
+their own arguments while blocks called as block have access
+to both their block arguments and the out{er method's method arguments.
+Also, both have access to a ``self'' pointer and convinence instructions for
+working with self.
+
+\subsection{Code Mnemonics Overview}
+
+\begin{longtable}{l|p{3.5in}}
+    \tableheader{Mnemonic} & \tableheader{Short Description} \\
+    \hline \endhead
+    \tsecheader{Stack Manipulation} \\
+    \mn{Dup} & duplicates the top item on the stack \\
+    \mn{Pop} & removes and discards the top item from the stack \\
+    \mn{Swap} & swaps the top two elements of the stack \\
+    \tsecheader{Literals} \\
+    \mn{Self} & pushes the self object with the caller \securelevel \\
+    \mn{TSelf} & pushes the self object unsecured (``Trusted'') \\
+    \mn{Int} \arg{num} & pushes the integer literal \arg{num} \\
+    \mn{True} & pushes the ``true'' object \\
+    \mn{False} & pushes the ``false'' object \\
+    \mn{Block} \arg{\#blk} & pushes a block object with the current
+		    environment \\
+    \tsecheader{Allocation} \\
+    \mn{Alloc} \arg{ivars} & \vbox{pushes a new object with the
+		    specified instance variables count} \\
+    \mn{AllocInd} & \vbox{pops the instance varibles count and 
+		    pushes a new object using that} \\
+    \mn{AllocFromArgs} & \vbox{Takes the array of arguments to the current
+                    method invocation and allocates a new object with those
+                    as its instance variables} \\
+    \mn{AllocByteArrayInd} & \vbox{Pops an integer from the top of the stack
+                and allocates a byte array with that integer as its size} \\
+    \tsecheader{Variables} \\
+    \mn{Temp} \arg{n} & pushes the $n^{th}$ temporary \\
+    \mn{StoreTemp} \arg{n} & pops the top of the stack
+		    and stores it into the $n^{th}$ temporary \\
+    \mn{Global} \arg{\$name} & pushes the global \arg{\$name} \\
+    \mn{StoreGlobal} \arg{\$name} & pops the top of the stack
+		    and stores it into the global \arg{\$name} \\
+    \mn{Arg} \arg{n} & pushes the $n^{th}$ argument \\
+    \mn{BlockArg} \arg{n} & pushes the $n^{th}$ block argument \\
+    \mn{StoreArg} \arg{n} & pops the top of the stack and stores it into
+                        the slot for the $n^{th}$ argument \\
+    \mn{StoreBlockArg} \arg{n} & \vbox{pops the top of the stack and stores it
+                        into the slot for the $n^{th}$ argument} \\
+    \mn{BlockArgs} \arg{n} \arg{m} & \vbox{copies the block arguments into
+                        temporaries numbered $n$ through $m$. If there
+                        are insufficient block arguments, it throws the
+                        integer -1} \\
+    \mn{StoreRetVal} & Takes the top of the stack and stores it in a special
+                        return value slot \\
+    \tsecheader{Object Manipulation} \\
+    \mn{StoreIntoByteArray} \arg{n} & pops a byte array, pops an integer, and
+                        stores the integer as the $n^{th}$ byte in the byte
+                        array \\
+    \mn{IndexByteArrayInd} & pops a byte array, pops an integer $n$, and 
+                            pushes the $n^{th}$ byte in the byte array
+                            as an unsigned integer. \\
+    \mn{Inst} \arg{n} & pops the top of the stack and pushes its $n^{th}$
+		    instance variable \\
+    \mn{StoreInst} \arg{n} & pops an object, pops the top of the stack
+		    and stores it into the $n^{th}$ instance variable of
+		    that object \\
+    \mn{InstInd} & pops an object, pops the top of the stack and pushes
+		    the instance variable of that object of that number \\
+    \mn{StoreInstInd} & \vbox{pops an object, pops the top of the stack and
+		    taking the instance variable of that object of that number,
+		    pops the next value and stores it into that
+		    instance variable} \\
+    \mn{SInst} \arg{n} & pushes the $n^{th}$
+		    instance variable of self \\
+    \mn{SStoreInst} \arg{n} & pops the top of the stack
+		    and stores it into the $n^{th}$ instance variable
+		    of self \\
+    \mn{SInstInd} & pops the top of the stack and pushes
+		    the instance variable of self of that number \\
+    \mn{SStoreInstInd} & pops the top of the stack and
+		    taking the instance variable of self of that number,
+		    pops the next value and stores it into
+		    that instance variable \\
+    \mn{ChMTable} \arg{\%mtable} & pops the top of the stack and sets its
+		    method table \\
+    \mn{SChMTable} \arg{\%mtable} & sets the method table of self \\
+    \tsecheader{Flow Control} \\
+    \mn{Call} \arg{\#blk} & calls the specified block \arg{\#blk}
+		    on the object on the top of the stack
+		    with the next \arg{argc} values as the arguments,
+		    popping all of those values and pushing the return value \\
+    \mn{MCall} \arg{argc} \arg{`name'} & calls the method
+		    \arg{`name'} on the object on the top of the stack
+		    with the next \arg{argc} values as the arguments,
+		    popping all of those values and pushing the return value \\
+    \mn{TSMCall} \arg{argc} \arg{`name'} &
+		    like \code{MCall} except calls on \code{TSelf} \\
+    \mn{SMCall} \arg{argc} \arg{`name'} &
+		    like \code{MCall} except calls on \code{Self} \\
+    \mn{Return} & pops and returns from an \code{MCall} with that value \\
+    \mn{SReturn} & convinence for \code{Self}, \code{Return} \\
+    \mn{RetValReturn} & returns any value in the special return value slot \\
+    \mn{Throw} & pops an object, unwinds the stack until an exception handler is                hit, and invokes the exception handler with the popped
+                object as an argument  \\
+    \tsecheader{Security} \\
+    \mn{Secure} & pops an object, pops the next value on the stack, and pushes
+		    the object with the \securelevel{} of that value \\
+    \mn{SSecure} & pops the top of the stack and pushes self with that
+		    \securelevel \\
+    \mn{Sl} & pops the top of the stack and pushes its \securelevel \\
+    \mn{SSl} & pushes the \securelevel{} the method was called with \\
+    \mn{IsRw} & pops the top of the stack pushes whether it is writable \\
+    \mn{SIsRw} & pushes whether self is writable \\
+    \mn{Ro} & pops of top of the stack and pushes it read-only \\
+    \mn{SRo} & pushes self read-only \\
+    \mn{Rw} & pops of top of the stack and pushes it read-write \\
+    \mn{SRw} & pushes self read-write \\
+    \tsecheader{Testing} \\
+    \mn{Equals} & pops two values, and pushes whether they're identical \\
+    \mn{RefEquals} & pops two values, and pushes whether they're identical
+		     ignoring securelevels and the RW flag \\
+\end{longtable}
+
+There are also several extremely similar bytecode instructions. All of them
+take the same arguments as MCall. They specify an operation to the interpreter,
+with the top values on the stack to be popped as arguments, and with the
+result to be left on the stack, just as with MCalls.
+If the operation is defined here for the types involved, the interpreter 
+does it. For integer operations, the interpreter will implement the
+operations when they are performed on \code{SmallInteger}s.
+
+If the interpreter does not know how to handle those types, it treats the
+instruction as an MCall.
+
+For example, if Add is run after two \code{SmallInteger}s are pushed, it will do
+integer addition without invoking any additional bytecode blocks. However, if
+an integer and a non-integer were pushed before-hand, it instead calls the
+programmer-defined routine as if Add were an MCall.
+
+A table describing these special instructions follows:
+
+\begin{longtable}{l|p{3.5in}}
+    \tableheader{Mnemonic} & \tableheader{Short Description} \\
+    \hline \endhead
+    \tsecheader{Binary Integer Operations} \\
+    \mn{Add} & Adds two integers \\
+    \mn{Subtract} & Subtracts the integer that would be the argument, were
+                    this an MCall, from the integer that would be the
+                    receiver \\
+    \mn{Multiply} & Multiplies two integers. \\
+    \mn{Divide} & Divides the integer that would be the receiver by the
+                  integer that would be the argument. \\
+    \mn{Mod} & Takes the mod of the would-be receiver by
+                the would-be argument. \\
+    \mn{Greater} & Tests if the would-be receiver is greater than the
+                    would-be argument \\
+    \mn{Less} & Tests if the would-be receiver is less than the would-be
+                    argument \\
+    \mn{IntegerEquals} & Tests if the would-be receiver is equal to the
+                            would-be argument. This differs from Equals
+                            in that non-integers are handled as MCalls here. \\
+    \tsecheader{Other Integer Operations} \\
+    \mn{Between} & Tests if the would-be receiver is between the two would-be
+                    arguments. Takes three arguments. \\
+    \tsecheader{Boolean Operations} \\
+    \mn{Not} & Takes one argument. If the would-be receiver is true, returns
+                false. If it is false, returns true. Otherwise, default to
+                MCall. \\
+\end{longtable}
+
+\subsection{Code Mnemonics Details}
+
+\newcommand{\mnsection}[2]
+{
+\vbox{
+    \subsubsection{#1}\label{s:#1}
+    #2
+    }
+}
+
+\newcommand{\mnsectitle}[1]{\nopagebreak\noindent\textbf{#1: }}
+\newcommand{\mnpart}[2]{\mnsectitle{#1}#2 \\}
+
+\newcommand{\mnin}[1]{\mnpart{Stack Input}{#1}}
+\newcommand{\mnout}[1]{\mnpart{Stack Output}{#1}}
+\newcommand{\mnop}[1]{\mnpart{Operand}{#1}}
+\newcommand{\mndesc}[1]{\mnpart{Description}{#1}}
+\newcommand{\mnreq}[1]{\mnpart{Requires}{#1}}
+
+\newcommand{\mnnoin}{\mnin{None}}
+\newcommand{\mnnoout}{\mnout{None}}
+\newcommand{\mnnoop}{\mnop{None}}
+\newcommand{\mnnoreq}{\mnreq{None}}
+
+Definitions used:
+
+The \textbf{current block} is the block where the instruction appears.
+
+A block was \textbf{called as a method} if it appears in a method table
+and was called directly by an \mn{MCall}, \mn{SMCall}, or \mn{TSMCall}
+instruction.
+
+The \textbf{current method}
+is current block if the current block was called as a method or
+the first method found going down the call chain.
+
+\textbf{self} is the object the current method was called on.
+
+The \ro{}/\rw{} flag is intended to be used
+to restrict the use of a reference to only reading data, but
+the implementation must not actually enforce it as the
+programmer may choose to allow certain modifications
+to an \ro{} object.
+
+The sections are as follows:
+
+\mnin{The values popped from the stack by this instruction in order,
+	with the leftmost one listed being the first popped.
+	These values are popped and therefore removed from the stack.}
+
+\mnout{The values pushed onto the stack by this instruction in reverse order,
+	with the leftmost one listed being the last pushed. In other words,
+	the order is as same as the order they will be popped in.
+	These values are pushed and therefore added to the stack.}
+
+\mnop{A description of the operands of the instruction, if any.}
+
+\mndesc{An overview description of the instruction and its full semantics.}
+
+\mnreq{A list of the conditions the programmer is required to ensure are
+	true in order for this instruction's behavior to be defined.
+	Most likely, an implementation will choose to display an error
+	message if these conditions are not met.}
+
+
+\mnsection{Alloc}{
+
+\mnnoin
+
+\mnout{an unsecured (\securelevel{} 0, \rw) reference to a newly allocated
+	object with an undefined method table and $ivars$ instance variables
+	all set to the value \code{nil} as defined in the
+	\hyperref[s:Value Format]{Value Format} section}
+
+\mnop{$ivars$ is the number of instance variables the new object will have}
+
+\mndesc{This instruction allocates a new object, which is guaranteed to have
+	no other references, and pushes a single reference to that object
+	onto the stack. This reference is unsecured (\securelevel{} 0, \rw).
+	The object has no method table defined, so it must be given one
+	using \mn{ChMTable} before \mn{MCall} can be used on it.
+	If $ivars$ is non-zero, then the object has $ivars$ instance variables
+	initialized to \securelevel{} 7, \ro{} references to \sobj\code{Nil}.}
+
+\mnreq{$ivars$ is a nonnegative integer}
+}
+
+\mnsection{AllocByteArrayInd}{
+
+\mnin{$n$}
+
+\mnout{an unsecured (\securelevel{} 0, \rw) reference to a newly allocated
+        bytearray with an undefined byte array}
+
+\mndesc{This instruction allocates a byte array of size $n$, meaning it
+        contains $n$ bytes. Each of these bytes starts out set to zero.
+        It returns the sole reference to that newly-created byte array.
+        Even though it is of a special type, it is still possible to set
+        a custom method table on it -- to call any methods on it, it will
+        be necessary to do that, as no methods are defined on it by default,
+        unlike with blocks and \code{SmallInteger}s.}
+
+\mnreq{$n$ is a non-negative \code{SmallInteger}. There is at least one value
+        on the stack.}
+}
+
+\mnsection{AllocFromArgs}{
+
+\mnnoin
+
+\mnout{an unsecured (\securelevel{} 0, \rw) reference to a newly allocated
+        objeect with an undefined method table and as many instance variables
+        as there were arguments to the current method invocation, set to
+        the arguments in order.}
+
+\mnnoop
+
+\mndesc{This instruction allows you to generate arrays directly from the
+        arguments to a method. Each time it is run in a method, it creates a
+        reference to a fresh object. To actually use it as an array, it must
+        first be set up with an appropriate method table.}
+
+\mnnoreq
+}
+
+\mnsection{AllocInd}{
+
+\mnin{$ivars$ is the number of instance variables the new object will have}
+
+\mnout{an unsecured (\securelevel{} 0, \rw) reference to a newly allocated
+	object with an undefined method table and $ivars$ instance variables
+	all set to the value \code{nil} as defined in the
+	\hyperref[s:Value Format]{Value Format} section}
+
+\mnnoop
+
+\mndesc{This instruction pops a value, $ivars$, and then allocates a
+	new object, which is guaranteed to have
+	no other references, and pushes a single reference to that object
+	onto the stack. This reference is unsecured (\securelevel{} 0, \rw).
+	The object has no method table defined, so it must be given one
+	using \mn{ChMTable} before \mn{MCall} can be used on it.
+	If $ivars$ is non-zero, then the object has $ivars$ instance variables
+	initialized to \securelevel{} 7, \ro references to \sobj\code{Nil}.}
+
+\mnreq{$ivars$ is a \code{SmallInteger} object representing a
+	nonnegative integer}
+}
+
+\mnsection{Arg}{
+
+\mnnoin
+
+\mnout{the $(n+1)^{th}$ argument of the method}
+
+\mnop{$n$ is the number of the argument to push}
+
+\mndesc{Pushes the argument of the current method numbered $n$, counting
+	from zero.}
+
+\mnreq{$0 \leq n < $ the number of arguments given to the current method.}
+}
+
+\mnsection{Block}{
+
+\mnnoin
+
+% TODO are block references ro or rw?
+\mnout{a read-write block object reference with \securelevel{} 0}
+
+\mnop{\arg{\#blk}: the block identifer to wrap in a block object}
+
+\mndesc{Pushes a new unsecured (\securelevel{} 0, \rw) block object with
+	the specified block identifier as the function pointer and the
+	current block context as the closure. That is, the newly created
+	block will use the current block's temporaries when invoked.
+	The block object's method table will be \smt\code{Block}.
+	If the Block opcode is called from within another block object,
+	then the context is the same as that of the context of the parent
+	block, and the Return opcode returns from the same method invocation
+	that it would in the parent block.}
+
+\mnreq{\arg{\#blk} defined somewhere in the same file.}
+}
+
+\mnsection{BlockArg}{
+
+\mnnoin
+
+\mnout{the $(n+1)^{th}$ argument of the block}
+
+\mnop{$n$ is the number of the argument to push}
+
+\mndesc{Pushes the argument of the current block numbered $n$, counting
+	from zero.}
+
+\mnreq{$0 \leq n < $ the number of arguments given to the current block.
+	The current block was \emph{not} called as a method.}
+}
+
+\mnsection{BlockArgs}{
+
+\mnnoin
+
+\mnnoout
+
+\mnop{$n$ is the initial temporary location, $m$ is the final one}
+
+\mndesc{Stores the first $m-n+1$ block arguments into temporaries starting
+        with the temporary numbered $n$. This allows efficient implementation
+        of block arguments as pass-by-value mutable variables.}
+
+\mnreq{$m$ must be greater than $n$, and both must be valid, allocated
+        temporaries. $m-n+1$ must be less than or equal to the number of
+        block arguments in the current context.}
+}
+
+\mnsection{Call}{
+
+\mnin{$obj, arg(argc-1), arg(argc-2), \ldots, arg(1), arg(0)$}
+
+\mnout{$ret$, the return value of the block}
+
+\mnop{$argc$ is the number of arguments,
+	\arg{\#blk} is the name of the block to call}
+
+\mndesc{\arg{\#blk} is called with $obj$ as the self value like it is a method.
+	Flow is transfered to that block until
+	a return is reached, at which point the return value $ret$ is pushed
+	and evaluation continues.
+	
+	See Also: \mn{MCall}.}
+
+\mnreq{\arg{\#blk} is a valid block.
+	The stack contains at least $argc+1$ elements.}
+}
+
+\mnsection{ChMTable}{
+
+\mnin{$obj$}
+
+\mnnoout
+
+\mnop{\arg{\%mtable}: the new method table}
+
+\mndesc{Changes the method table in the object referenced by $obj$ to
+	\arg{\%mtable}.}
+
+\mnreq{The method table with the name \arg{\%mtable} is declared somewhere
+	in the file. $obj$ is not a \code{SmallInteger}.}
+}
+
+\mnsection{Dup}{
+
+\mnin{a value $v$}
+
+\mnout{two copies of $v$}
+
+\mnnoop
+
+\mndesc{Duplicates the top element of the stack.}
+
+\mnreq{The stack has at least one element.}
+}
+
+\mnsection{Equals}{
+
+\mnin{$a$, $b$}
+
+\mnout{a boolean (\true{} or \false)}
+
+\mnnoop
+
+\mndesc{Pushes \true{} if $a$ and $b$ point to the same object,
+	have the same \securelevel{} and are either both \ro{} or both \rw{},
+	otherwise pushes \false. See Also: \mn{RefEquals}.}
+
+\mnreq{The stack contains at least two elements.}
+}
+
+\mnsection{False}{
+
+\mnnoin
+
+\mnout{the value \false{} as defined in the
+	\hyperref[s:Value Format]{Value Format} section}
+
+\mnnoop
+
+\mndesc{Pushes the boolean constant \false,
+	a \securelevel{} 7, read-only reference to \sobj\code{False}.}
+
+\mnnoreq
+}
+
+\mnsection{Global}{
+
+\mnnoin
+
+\mnout{the value of global \arg{\$name}}
+
+\mnop{\arg{\$name} specifies which global to push}
+
+\mndesc{Pushes the global \arg{\$name}'s value.}
+
+\mnreq{The global with the name \arg{\$name} is declared somewhere in the
+	file.}
+}
+
+\mnsection{Inst}{
+
+\mnin{$obj$}
+
+\mnout{instance variable $n$ of $obj$}
+
+\mnop{$n$: which instance variable}
+
+\mndesc{Pops $obj$ and pushes its instance variable number $n$, counting
+	from zero.}
+
+\mnreq{$n$ is an integer. $0 \leq n < $ the number of instance variables
+	of $obj$. The stack contains at least one element.}
+}
+
+\mnsection{InstInd}{
+
+\mnin{$obj$, $n$}
+
+\mnout{instance variable $n$ of $obj$}
+
+\mnnoop
+
+\mndesc{Pops $obj$ and pushes its instance variable number $n$, counting
+	from zero.}
+
+\mnreq{$n$ is a \code{SmallInteger}.
+	$0 \leq n < $ the number of instance variables of $obj$.
+	The stack contains at least two elements.}
+}
+
+\mnsection{Int}{
+
+\mnnoin
+
+\mnout{a \code{SmallInteger} object with the value $num$}
+
+\mnop{$num$: an integer literal matching the regular expression
+	\linebreak\code{-?[:digit:]+}}
+
+\mndesc{Pushes an integer object with the value $num$ using the method table
+	\smt\code{SmallInteger}. \code{SmallInteger}s are immutable, so they
+	are considered to be read-only \securelevel{} 7 references.}
+
+\mnreq{$num$ is a valid integer literal. $num$ fits in the implementation
+	defined range for a \code{SmallInteger}.}
+}
+
+\mnsection{IsRw}{
+
+\mnin{$obj$}
+
+\mnout{a boolean (\true{} or \false)}
+
+\mnnoop
+
+\mndesc{Pushes \true{} if $obj$ is an \rw{} reference,
+	pushes \false{} if $obj$ is an \ro{} reference.}
+
+\mnreq{The stack contains at least one element.}
+}
+
+\mnsection{MCall}{
+
+\mnin{$obj, arg(argc-1), arg(argc-2), \ldots, arg(1), arg(0)$}
+
+\mnout{$ret$, the return value of the method}
+
+\mnop{$argc$ is the number of arguments,
+	\arg{`name'} is the symbol of the method to call}
+
+\mndesc{\arg{`name'} is looked up in $obj$'s method table. If it is found,
+	then the block it is paired with is called with the arguments
+	popped from the stack. Otherwise, $obj$'s default method is called
+	with an implementation defined symbol object representing the
+	method called followed by the arguments (shifted by one because
+	of the symbol object). Flow is transfered to that block until
+	a return is reached, at which point the return value $ret$ is pushed
+	and evaluation continues.
+	
+	See Also: \mn{Call}, \mn{SMCall}, \mn{TSMCall}.}
+
+\mnreq{$obj$ has a method table defined.
+	The stack contains at least $argc+1$ elements.
+	Note: \arg{`name'} does \emph{not} have to be defined by
+	a method table.}
+}
+
+\mnsection{Pop}{
+
+\mnin{one value}
+
+\mnnoout
+
+\mnnoop
+
+\mndesc{Throws away the top element of the stack.}
+
+\mnreq{The stack has at least one element.}
+}
+
+\mnsection{RefEquals}{
+
+\mnin{$a$, $b$}
+
+\mnout{a boolean (\true{} or \false)}
+
+\mnnoop
+
+\mndesc{Pushes \true{} if $a$ and $b$ point to the same object,
+	pushses \false{} otherwise.
+	\securelevel{} and \ro{}/\rw{} are ignored.
+	See Also: \mn{Equals}.}
+
+\mnreq{The stack contains at least two elements.}
+}
+
+\mnsection{Return}{
+
+\mnin{$ret$}
+
+\mnnoout
+
+\mnnoop
+
+\mndesc{Pops $ret$ and uses it as the return value from the most
+	recent \mn{MCall} (or \mn{SMCall} or \mn{TSMCall}).
+	Execution resumes after that \mn{MCall} instruction,
+	and $ret$ is pushed onto the caller's stack as \mn{MCall}'s
+	output value. Any values left on the callee's stack are
+	discarded. If this opcode is signalled within the context of
+	BlockEvaluate, it returns from the method invocation wherein
+	the block was originally created with the Block instruction.
+
+	Any method invocation may only return once, even though
+	multiple blocks with Return opcodes may be created in one method
+	invocation. Once a method invocation has been returned from, further
+	returns from that invocation cause the block that executes the Return
+	opcode to instead behave as though \code{SMCall `multipleReturn'}
+	had been
+	called instead.
+	
+	See Also: \mn{SReturn}.}
+
+\mnreq{The stack contains at least one element.}
+}
+
+\mnsection{RetValReturn}{
+\mnnoin
+
+\mnnoout
+
+\mndesc{This returns from the current method invocation using the value stored
+        in ``retval'' as a return value.
+
+        See also: \mn{StoreRetVal}}
+
+\mnreq{``retval'' has been stored into this method invocation using
+        \mn{StoreRetVal}.}
+}
+
+\mnsection{Ro}{
+
+\mnin{$obj$}
+
+\mnout{an \ro{} reference to the same object as $obj$}
+
+\mnnoop
+
+\mndesc{Pops $obj$ and pushes an \ro{} reference to the same object
+	with the same \securelevel.}
+
+\mnreq{The stack contains at least one element.}
+}
+
+\mnsection{Rw}{
+
+\mnin{$obj$}
+
+\mnout{an \rw{} reference to the same object as $obj$}
+
+\mnnoop
+
+\mndesc{Pops $obj$ and pushes an \rw{} reference to the same object
+	with the same \securelevel.}
+
+\mnreq{$obj$ is not a \code{SmallInteger}.
+	The stack contains at least one element.}
+}
+
+\mnsection{SChMTable}{
+
+\mnnoin
+
+\mnnoout
+
+\mnop{\arg{\%mtable}: the new method table}
+
+\mndesc{Changes the method table in the self object to
+	\arg{\%mtable}.}
+
+\mnreq{The method table with the name \arg{\%mtable} is declared somewhere
+	in the file. self is not a \code{SmallInteger}.}
+}
+
+\mnsection{Secure}{
+
+\mnin{$obj$, $sl$}
+
+\mnout{a reference to $obj$ with a \securelevel{} of $sl$}
+
+\mnnoop
+
+\mndesc{Pushes a new reference to $obj$ with the same writeability, but
+	with a \securelevel{} of $sl$.}
+
+\mnreq{$sl$ is a \code{SmallInteger}. $0 \leq sl \leq 7$.
+	The stack contains at least two elements.}
+}
+
+\mnsection{Self}{
+
+\mnnoin
+
+\mnout{the reference the current method was called on}
+
+\mnnoop
+
+\mndesc{Pushes the object reference the current method was called on
+	with the same \securelevel{} and writeability. Many instructions
+	have versions which automatically use this for the target object.
+	See Also: \mn{TSelf}.}
+
+\mnnoreq
+}
+
+\mnsection{SInst}{
+
+\mnnoin
+
+\mnout{instance variable $n$ of self}
+
+\mnop{$n$: which instance variable}
+
+\mndesc{Pushes instance variable number $n$ of self, counting
+	from zero.}
+
+\mnreq{$n$ is an integer. $0 \leq n < $ the number of instance variables
+	of self.}
+}
+
+\mnsection{SInstInd}{
+
+\mnin{$n$}
+
+\mnout{instance variable $n$ of self}
+
+\mnnoop
+
+\mndesc{Pushes instance variable number $n$ of self, counting
+	from zero.}
+
+\mnreq{$n$ is a \code{SmallInteger}.
+	$0 \leq n < $ the number of instance variables of self.
+	The stack contains at least one element.}
+}
+
+\mnsection{SIsRw}{
+
+\mnnoin
+
+\mnout{a boolean (\true{} or \false)}
+
+\mnnoop
+
+\mndesc{Pushes \true{} if self is an \rw{} reference,
+	pushes \false{} if self is an \ro{} reference.
+	This gives the writability of the reference used to call
+	the current method, so it can be used to check access rights.}
+
+\mnnoreq
+}
+
+\mnsection{Sl}{
+
+\mnin{$obj$}
+
+\mnout{the \securelevel{} of $obj$ as a \code{SmallInteger}}
+
+\mnnoop
+
+\mndesc{Pops $obj$ and pushes its \securelevel{} as a \code{SmallInteger}.}
+
+\mnreq{The stack contains at least one element.}
+}
+
+\mnsection{SMCall}{
+
+\mnin{$arg(argc-1), arg(argc-2), \ldots, arg(1), arg(0)$}
+
+\mnout{$ret$, the return value of the method}
+
+\mnop{$argc$ is the number of arguments,
+	\arg{`name'} is the symbol of the method to call}
+
+\mndesc{\arg{`name'} is looked up in self's method table. If it is found,
+	then the block it is paired with is called with the arguments
+	popped from the stack. Otherwise, self's default method is called
+	with an implementation defined symbol object representing the
+	method called followed by the arguments (shifted by one because
+	of the symbol object). Flow is transfered to that block until
+	a return is reached, at which point the return value $ret$ is pushed
+	and evaluation continues. Note that the self reference in the called
+	method will have the same \securelevel{} and writability as the
+	reference used to call the current method.
+	
+	See Also: \mn{MCall}, \mn{TSMCall}.}
+
+\mnreq{The stack contains at least $argc+1$ elements.
+	Note: \arg{`name'} does \emph{not} have to be defined by
+	a method table.}
+}
+
+\mnsection{SReturn}{
+
+\mnnoin
+
+\mnnoout
+
+\mnnoop
+
+\mndesc{Uses self as the return value from the most
+	recent \mn{MCall} (or \mn{SMCall} or \mn{TSMCall}).
+	Execution resumes after that \mn{MCall} instruction,
+	and (the callee's) self is pushed onto
+	the caller's stack as \mn{MCall}'s output value.
+	Any values left on the callee's stack are discarded.
+	See Also: \mn{Return}.}
+
+\mnnoreq
+}
+
+\mnsection{SRo}{
+
+\mnnoin
+
+\mnout{an \ro{} reference to self}
+
+\mnnoop
+
+\mndesc{Pushes an \ro{} reference to self with the same \securelevel.}
+
+\mnnoreq
+}
+
+\mnsection{SRw}{
+
+\mnnoin
+
+\mnout{an \rw{} reference to self}
+
+\mnnoop
+
+\mndesc{Pushes an \rw{} reference to self with the same \securelevel.}
+
+\mnreq{self is not a \code{SmallInteger}.}
+}
+
+\mnsection{SSecure}{
+
+\mnin{$sl$}
+
+\mnout{a reference to self with a \securelevel{} of $sl$}
+
+\mnnoop
+
+\mndesc{Pushes a new reference to self with the same writeability, but
+	with a \securelevel{} of $sl$.}
+
+\mnreq{$sl$ is a \code{SmallInteger}. $0 \leq sl \leq 7$.
+	The stack contains at least one element.}
+}
+
+\mnsection{SSl}{
+
+\mnnoin
+
+\mnout{the \securelevel{} of self as a \code{SmallInteger}}
+
+\mnnoop
+
+\mndesc{Pushes the \securelevel{} of self as a \code{SmallInteger}.
+	This gives the \securelevel{} of the reference used to call
+	the current method, so it can be used to check access rights.}
+
+\mnnoreq
+}
+
+\mnsection{StoreArg}{
+\mnin{a value}
+
+\mnnoout
+
+\mnop{\arg{$n$}} specifies which argument.
+
+\mndesc{Stores the value popped into the $n^th$ argument slot.
+        This allows the compiler to treat arguments like variables
+        without having to copy arguments into temporaries. }
+
+\mnreq{There must be a value on the stack. $n$ must be less than the total
+        number of arguments passed into the current method invocation.}
+}
+
+\mnsection{StoreBlockArg}{
+\mnin{a value}
+
+\mnnoout
+
+\mnop{\arg{$n$}: specifies which argument.}
+
+\mndesc{Stores the value popped into the $n^th$ argument slot. This is not
+        useful in writing a Compass compiler unless the compiler does
+        sophisticated optimizations.}
+
+\mnreq{It must be within the context of a block, and $n$ must be less than
+        the total number of arguments passed into the current method
+        invocation.}
+}
+
+\mnsection{StoreGlobal}{
+
+\mnin{a value $v$}
+
+\mnnoout
+
+\mnop{\arg{\$name} specifies which global to store into}
+
+\mndesc{Stores $v$ into the global \arg{\$name}.}
+
+\mnreq{The global with the name \arg{\$name} is declared somewhere in the
+	file. The stack contains at least one element.}
+}
+
+\mnsection{StoreInst}{
+
+\mnin{$obj$, $v$}
+
+\mnnoout
+
+\mnop{$n$: which instance variable}
+
+\mndesc{Pops $obj$ and stores $v$ into its instance variable number $n$,
+	counting from zero.}
+
+\mnreq{$n$ is an integer. $0 \leq n < $ the number of instance variables
+	of $obj$. The stack contains at least two elements.}
+}
+
+\mnsection{StoreInstInd}{
+
+\mnin{$obj$, $n$, $v$}
+
+\mnnoout
+
+\mnnoop
+
+\mndesc{Pops $obj$ and stores $v$ into its instance variable number $n$,
+	counting from zero.}
+
+\mnreq{$n$ is a \code{SmallInteger}.
+	$0 \leq n < $ the number of instance variables of $obj$.
+	The stack contains at least three elements.}
+}
+
+\mnsection{StoreIntoByteArray}{
+
+\mnin{$arr$, $i$}
+
+\mnnoout
+
+\mnop{$n$: which byte to set}
+
+\mndesc{Stores $i$ into $arr$'s $n^{th}$ byte}
+
+\mnreq{$arr$ must refer to a byte array created with \mn{AllocByteArrayInd}
+        There must be at least two values on the stack.}
+}
+
+\mnsection{StoreRetVal}{
+
+\mnin{$v$}
+
+\mnnoout
+
+\mnnoop
+
+\mndesc{Stores $v$ in a special slot in the method's activation record known
+        as ``retval''.}
+
+\mnreq{The stack contains at least one element.}
+}
+
+\mnsection{SStoreInst}{
+
+\mnin{$v$}
+
+\mnnoout
+
+\mnop{$n$: which instance variable}
+
+\mndesc{Stores $v$ into instance variable number $n$ of self,
+	counting from zero.}
+
+\mnreq{$n$ is an integer. $0 \leq n < $ the number of instance variables
+	of self. The stack contains at least one element.}
+}
+
+\mnsection{SStoreInstInd}{
+
+\mnin{$n$, $v$}
+
+\mnnoout
+
+\mnnoop
+
+\mndesc{Stores $v$ into instance variable number $n$ of self,
+	counting from zero.}
+
+\mnreq{$n$ is a \code{SmallInteger}.
+	$0 \leq n < $ the number of instance variables of self.
+	The stack contains at least two elements.}
+}
+
+
+\mnsection{StoreTemp}{
+
+\mnin{a value $v$}
+
+\mnnoout
+
+\mnop{$n$ specifies which temporary to store into}
+
+\mndesc{Stores $v$ into the temporary $n$ of the current method,
+	counting from 0 for the first temporary.
+	Remember that blocks get the tempories of the outer method.
+	See Also: \mn{Temp}.}
+
+\mnreq{$n$ is an integer. $0 \leq n < $ the number of temporaries
+	in the current method. The stack contains at least one element.}
+}
+
+\mnsection{Swap}{
+
+\mnin{two values $v$, $w$}
+
+\mnout{two values $w$, $v$ (reverse order)}
+
+\mnnoop
+
+\mndesc{Reverses the order of the top two elements of the stack.}
+
+\mnreq{The stack has at least two elements.}
+}
+
+\mnsection{Temp}{
+
+\mnnoin
+
+\mnout{the value of temporary $n$}
+
+\mnop{$n$ specifies which temporary to push}
+
+\mndesc{Pushes the specified temporary value of the current method,
+	counting from 0 for the first temporary.
+	Remember that blocks get the tempories of the outer method.
+	Uninitalized tempories have the value of an \ro reference
+	to \code{@Nil} with \securelevel{} 7. See Also: \mn{StoreTemp}.}
+
+\mnreq{$n$ is an integer. $0 \leq n < $ the number of temporaries
+	in the current method.}
+}
+
+\mnsection{Throw}{
+\mnin{$v$}
+
+\mnnoout
+
+\mndesc{This instruction takes $v$ and considers it an exception. It then
+        walks up the call chain, for each block's activation record
+        recursively examining its caller's activation record, starting
+        from the current block invocation until a catch block is found.
+        A catch block can be set up associated with an activation record
+        by using built-in methods.
+        
+        The catch block is then executed as a block, with a context method
+        determined by the semantics of the method that set the catch block
+        up. The execution of the current block is cut off, and never
+        returned to, as the catch block's \code{BlockReturn} activation record
+        is also set up by the method setting up the catch block.
+        In this sense, \mn{Throw} complements instructions such as \mn{Return}
+        and \mn{BlockReturn} as another way to exit an activation record.
+
+        $v$ is used as the argument to the catch block, as a signal as to
+        why the call chain was unwound.}
+
+\mnreq{A catch block has been set up at some point in the program. The stack
+        contains at least one value.}
+}
+
+\mnsection{True}{
+\mnnoin
+
+\mnout{the value \true{} as defined in the
+	\hyperref[s:Value Format]{Value Format} section}
+
+\mnnoop
+
+\mndesc{Pushes the boolean constant true,
+	a \securelevel{} 7, read-only reference to \sobj\code{True}.}
+
+\mnnoreq
+}
+
+\mnsection{TSelf}{
+
+\mnnoin
+
+\mnout{an unsecured, writable reference to the object current method
+	was called on}
+
+\mnnoop
+
+\mndesc{Pushes a reference to the object the current method was called on
+	with \securelevel{} 0 and \rw. The \mn{TSMCall} instruction
+	is a version of \mn{MCall} which automatically uses this for the
+	target object. See Also: \mn{Self}, \mn{TSMCall}.}
+
+\mnnoreq
+}
+
+\mnsection{TSMCall}{
+
+\mnin{$arg(argc-1), arg(argc-2), \ldots, arg(1), arg(0)$}
+
+\mnout{$ret$, the return value of the method}
+
+\mnop{$argc$ is the number of arguments,
+	\arg{`name'} is the symbol of the method to call}
+
+\mndesc{\arg{`name'} is looked up in self's method table. If it is found,
+	then the block it is paired with is called with the arguments
+	popped from the stack. Otherwise, self's default method is called
+	with an implementation defined symbol object representing the
+	method called followed by the arguments (shifted by one because
+	of the symbol object). Flow is transfered to that block until
+	a return is reached, at which point the return value $ret$ is pushed
+	and evaluation continues. Note that the self reference in the called
+	method will be a trusted reference, as returned from \mn{TSelf};
+	it will have \securelevel{} 0 be \rw{}.
+	
+	See Also: \mn{MCall}, \mn{SMCall}.}
+
+\mnreq{The stack contains at least $argc+1$ elements.
+	Note: \arg{`name'} does \emph{not} have to be defined by
+	a method table.}
+}
+
+\section{Method Table Format}
+
+Like blocks, method tables start with a line with just the name, starting
+with a \smt. The next line consists of ``default = '' followed by a block
+identifier. This block is called if no other method name matches.
+The following lines each consist of a method name in single quotes
+followed by an equals sign followed by a block identifier. For example:
+
+\vbox{\noindent
+    \code{\smt Integer \\ default = \sblk IntegerMessageNotUnderstood \\
+	`+' = \sblk IntegerAdd \\ `-' = \sblk IntegerSub}}
+
+Note that the block identifier may not be defined yet, and block indentifiers
+which are referenced but not defined may be defined by the implementation.
+This is expected for primitives like addition.
+
+\subsection{Special Method Tables}
+
+A few special objects get created but are not user-defined. In order to allow
+maximal control over these objects, they are controled by specially named
+method tables:
+
+\begin{itemize}
+    \item \code{\%SmallInteger} defines the methods for integer constants.
+    \item \code{\%Block} defines the methods for blocks.
+\end{itemize}
+
+\section{Value Format}
+\label{s:Value Format}
+
+A value is any single object reference or integer. One stack location or
+variable of any type holds exactly one value. There are a few different
+types of value definitions which are used in object and global definitions:
+
+\begin{tabular}{l|p{3in}}
+    Code & Description \\
+    \hline
+    \code{ref} \arg{@object} \arg{sl} ( \code{ro} $|$ \code{rw} ) &
+	a reference to an object with the specified \securelevel{} (int)
+	and writeability \\
+    \code{int} \arg{n} & the integer \arg{n} \\
+    \code{true} \label{true}
+	& the boolean constant true \hbox{(\code{ref @True 7 ro})}\\
+    \code{false} \label{false}
+	& the boolean constant false \hbox{(\code{ref @False 7 ro})}\\
+    \code{nil} \label{nil} & short for \hbox{\code{ref @Nil 7 ro}} \\
+\end{tabular}
+
+Note that references have \SecureLevels{} and writeablity in addition to the
+actual reference. These do not actually do anything by themselves, but
+they are passed along with the intention of methods examining them to determine
+how they should act.
+
+\section{Object Format}
+
+Once again, like blocks and method tables, objects start with a line with
+just the name, starting with a \code{@}. The next line must be
+\code{mtable =} \arg{\%mt} where \arg{\%mt} is a valid method table defined
+in the file. The following lines are the instances variables of the
+object in order, with the first one being considered instance variable 0.
+They are written as values, as defined in the value format, one per line.
+The number of instance variables an object has cannot change after it is
+created and may be zero. One may wish to fill in instance variables with
+nil if they exist but have not yet been set.
+
+\subsection{Special Objects}
+
+The object \sobj\code{Nil} must be defined and will be used for the
+not yet set instance variables of a newly allocated object.
+The objects \sobj\code{True} and \sobj\code{False} must be defined and
+will be used for the boolean values true and false.
+
+\section{Globals Format}
+
+Globals are defined as lines which look like
+\hbox{\sglb\arg{globalName}\code{= }\arg{value}} where value is
+in the value format specified above. Global names may not have equals signs
+(``='') in them, as they will be considered the separator between the global
+and the value.
+
+\section{Implementation Provided Methods}
+
+Some functionality cannot be implemented in the bytecode format, particularly
+for the implementation defined \code{SmallInteger} and \code{Block} types.
+For this reason, the implementation is required to provide methods
+matching the following signatures if not provided by the input file.
+
+\newcommand{\methodsection}[2]
+{
+\vbox{
+    \subsubsection{\sblk\code{#1}}\label{s:#1}
+    #2
+    }
+}
+
+\newcommand{\methsectitle}[1]{\nopagebreak\noindent\textbf{#1: }}
+\newcommand{\methpart}[2]{\methsectitle{#1}#2 \\}
+
+\newcommand{\metharg}[1]{\methpart{Arguments}{#1}}
+\newcommand{\methret}[1]{\methpart{Returns}{#1}}
+\newcommand{\methdesc}[1]{\methpart{Description}{#1}}
+\newcommand{\methreq}[1]{\methpart{Requires}{#1}}
+
+\newcommand{\methnoarg}{\metharg{None}}
+\newcommand{\methnoret}{\methret{self}}
+\newcommand{\methnoreq}{\methreq{None}}
+
+
+\subsection{\code{SmallInteger} Methods}
+
+Note that \code{SmallInteger}s are immutable, so none of these methods
+modify any \code{SmallInteger}s.
+
+\methodsection{SmallIntegerAdd}{
+
+\metharg{$num$}
+
+\methret{the sum of self and $num$. self$+num$}
+
+\methdesc{Adds two \code{SmallInteger}s.}
+
+\methreq{self and $num$ are \code{SmallInteger}s.}
+}
+
+\methodsection{SmallIntegerSub}{
+
+\metharg{$num$}
+
+\methret{the difference of self and $num$. self$-num$}
+
+\methdesc{Subtracts self minus $num$.}
+
+\methreq{self and $num$ are \code{SmallInteger}s.}
+}
+
+\methodsection{SmallIntegerMul}{
+
+\metharg{$num$}
+
+\methret{the product of self and $num$. self$*num$}
+
+\methdesc{Mutiplies two \code{SmallInteger}s.}
+
+\methreq{self and $num$ are \code{SmallInteger}s.}
+}
+
+\methodsection{SmallIntegerDiv}{
+
+\metharg{$num$}
+
+\methret{the quotient of self and $num$. self \code{div} $num$}
+
+\methdesc{Performs integer division on two \code{SmallInteger}s
+	and returns the quotient.}
+
+\methreq{self and $num$ are \code{SmallInteger}s.}
+}
+
+\methodsection{SmallIntegerMod}{
+
+\metharg{$num$}
+
+\methret{the remainder of integer division of self and $num$.
+	self $\% num$}
+
+\methdesc{Performs integer division on two \code{SmallInteger}s
+	and returns the remainder.}
+
+\methreq{self and $num$ are \code{SmallInteger}s.}
+}
+
+\methodsection{SmallIntegerNegate}{
+
+\methnoarg
+
+\methret{the opposite of self. $0-$self}
+
+\methdesc{Returns the negatation of self.}
+
+\methreq{self is a \code{SmallInteger}.}
+}
+
+\subsection{\code{Block} Methods}
+
+\methodsection{BlockEvaluate}{
+
+\metharg{the arguments of the block}
+
+\methret{the value on the top of the stack when the block finishes evaluation}
+
+\methdesc{This method switches control to the block pointed to by self.
+	If the block executes
+	the Return opcode, then it will return from the method
+	it was created in, and the \sblk\code{BlockEvaluate} method
+	will never return. Otherwise, this method will return the value
+	left at the top of the block's stack.}
+
+\methreq{self is a \code{Block}.}
+}
+
+\subsection{Simple I/O Methods}
+
+The read methods work in any object.
+
+\methodsection{SimpleKeyboardIOReadInt}{
+
+\methnoarg
+
+\methret{a \code{SmallInteger} or \nil}
+
+\methdesc{Asks the user to enter an integer and returns that integer.
+	If any error occurs or the user does not enter an integer, then
+	\nil is returned instead.}
+
+\methnoreq
+}
+
+\methodsection{SimpleKeyboardIOReadChar}{
+
+\methnoarg
+
+\methret{a \code{SmallInteger} or \nil}
+
+\methdesc{Asks the user to enter one character and returns the Unicode code
+	point of that character. 
+	If any error occurs or an end of file is reached, then nil is returned
+	instead.
+	\nil is returned instead.}
+
+\methnoreq
+}
+
+\methodsection{SimpleKeyboardIOPrintInt}{
+
+\methnoarg
+
+\methnoret
+
+\methdesc{Prints the integer self.}
+
+\methreq{self is a \code{SmallInteger}}
+}
+
+\methodsection{SimpleKeyboardIOPrintChar}{
+
+\methnoarg
+
+\methnoret
+
+\methdesc{Prints the character with the Unicode code point value of self.}
+
+\methreq{self is a \code{SmallInteger}}
+}
+
+\end{document}

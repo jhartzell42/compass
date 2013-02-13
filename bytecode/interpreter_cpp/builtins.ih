@@ -1,0 +1,237 @@
+#ifndef BYTECODE_BUILTINS_IH
+#define BYTECODE_BUILTINS_IH
+
+#include "exec.h"
+#include "Object.h"
+#include <string>
+#include <iostream>
+
+inline ActivationRecord *
+ActivationRecord::evaluate_block(Value blk,
+				 int argc) {
+    Location<Block> real_target =
+	blk.get_block_code();
+    MethodInvocation *closure =
+	blk.get_closure_method_invocation();
+    return new ActivationRecord(real_target,
+				self,
+				closure,
+				this,
+				false,
+				false,
+				0,
+				stack.end() - argc,
+				stack.end());
+}
+
+
+inline ActivationRecord *
+ActivationRecord::call_builtin(Location<Block> blk,
+			       int argc,
+			       const Value &receiver) {
+    push(receiver);
+    switch(blk->type) {
+	case 0x01: // #SmallIntegerAdd
+	    {
+		assert(argc == 1);
+		push(pop() + pop());
+		return this;
+	    }
+	case 0x02: // #SmallIntegerSub
+	    {
+		assert(argc == 1);
+		int64_t receiver = pop();
+		int64_t arg = pop();
+		push(receiver - arg);
+		return this;
+	    }
+	case 0x03: // #SmallIntegerMul
+	    {
+		assert(argc == 1);
+		push(pop() * pop());
+		return this;
+	    }
+	case 0x04: // #SmallIntegerDiv
+	    {
+		assert(argc == 1);
+		int64_t receiver = pop();
+		int64_t arg = pop();
+		push(receiver / arg);
+		return this;
+	    }
+	case 0x05: // #SmallIntegerMod
+	    {
+		assert(argc == 1);
+		int64_t receiver = pop();
+		int64_t arg = pop();
+		push(receiver % arg);
+		return this;
+	    }
+	case 0x06: // #SmallIntegerNegate
+	    {
+		assert(argc == 0);
+		push(-pop());
+		return this;
+	    }
+	case 0x07: // #SmallIntegerLess
+	    {
+		assert(argc == 1);
+		int64_t receiver = pop();
+		int64_t arg = pop();
+		push(receiver < arg);
+		return this;
+	    }
+	case 0x08: // #SmallIntegerGreater
+	    {
+		assert(argc == 1);
+		int64_t receiver = pop();
+		int64_t arg = pop();
+		push(receiver > arg);
+		return this;
+	    }
+	case 0x09: // #BlockEvaluate
+	    {
+		Value receiver = pop();
+		return evaluate_block(receiver, argc);
+	    }
+	case 0x0A: // #SimpleKeyboardIOReadInt
+	case 0x0B: // #SimpleKeyboardIOReadChar
+	case 0x0C: // #SimpleKeyboardIOPrintInt
+	case 0x0D: // #SimpleKeyboardIOPrintChar
+	    goto fail;
+	case 0x0E: // #Abort
+	    {
+		std::cout << "Abort method invoked" << std::endl;
+		std::cout << std::flush;
+		abort();
+	    }
+	case 0x0F: // #SimpleKeyboardIOPrintMethodTableName
+	    {
+		assert(argc == 0);
+		Value receiver = pop();
+		std::cout << receiver->get_method_table_location()
+		    << std::endl;
+		return this;
+	    }
+	case 0x10: // #BlockRepeat
+	    {
+		Value receiver = pop();
+		Location<Block> real_target =
+		    receiver.get_block_code();
+		MethodInvocation *closure =
+		    receiver.get_closure_method_invocation();
+		return new ActivationRecord(real_target,
+					    self,
+					    closure,
+					    this,
+					    true,
+					    false,
+					    0,
+					    stack.end() - argc,
+					    stack.end());
+	    }
+	case 0x11: // #BlockTry
+	    goto fail;
+	case 0x12: // #IOPrintChar
+	    {
+		Value receiver = pop();
+		int fd = (*receiver)[0];
+		char to_write = (int)pop();
+		write(fd, &to_write, 1);
+		push(receiver);
+		return this;
+	    }
+	case 0x13: // #IOReadChar
+	    {
+		Value receiver = pop();
+		int fd = (*receiver)[0];
+		char to_read;
+		if(read(fd,&to_read,1) == 1) {
+		    push(to_read);
+		} else {
+		    push(-1);
+		}
+		return this;
+	    }
+	case 0x14: // #ReferenceCompare
+	    {
+		assert(argc == 1);
+		push(pop() == pop());
+		return this;
+	    }
+	case 0x15: // #PrimitiveArraySet
+	    goto fail;
+	case 0x16: // #StringGet
+	    {
+		Value array = pop();
+		Value fallback_block = pop();
+		int index = pop();
+		ByteArray arr = array->get_byte_array();
+		if(index > arr.size()) {
+		    return evaluate_block(fallback_block, 0);
+		}
+		push(arr[index]);
+		return this;
+	    }
+	case 0x17: // #ByteArraySet
+	    goto fail;
+	case 0x18: // #ByteArraySliceInternal
+	    {
+		Value receiver = pop();
+		ByteArray arr = receiver->get_byte_array();
+		int step = pop();
+		int finish = pop();
+		int start = pop();
+		if(step == 1) {
+		    ByteArray res = byte_array_slice(arr, start, finish);
+		    Value rval = ObjectAllocation::allocate_object(res);
+		    push(rval);
+		    return this;
+		}
+		goto fail;
+	    }
+	case 0x19: // #StringCompare
+	    goto fail;
+	case 0x1A: // #EvaluateFirstArgument
+	    {
+		pop();
+		Value first_argument = *(stack.end() - argc);
+		stack.erase(stack.end() - argc, stack.end());
+		return evaluate_block(first_argument, 0);
+	    }
+	case 0x1B: // #EvaluateSecondArgument
+	    {
+		pop();
+		Value second_argument = *(stack.end() - argc + 1);
+		stack.erase(stack.end() - argc, stack.end());
+		return evaluate_block(second_argument, 0);
+	    }
+	case 0x1C: // #ReturnTrue
+	    {
+		pop();
+		for(int i = 0; i<argc; i++) {
+		    pop();
+		}
+		push(true);
+		return this;
+	    }
+	case 0x1D: // #ReturnFalse
+	    {
+		pop();
+		for(int i = 0; i<argc; i++) {
+		    pop();
+		}
+		push(true);
+		return this;
+	    }
+	case 0x1E: // #ByteArrayConcatInternal
+	case 0x1F: // #ByteArraySlurpInternal
+	default:
+	    goto fail;
+fail:
+	    std::cout << "*fatal error -- unrecognized builtin*"
+		<< std::endl;
+	    exit(31);
+    }
+}
+#endif

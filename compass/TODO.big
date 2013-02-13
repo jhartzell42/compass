@@ -1,0 +1,6 @@
+Write Compass spec
+Translate Compass-to-Bytecode compiler to compass
+Make in-place version of Compass-to-Bytecode compiler, extending bytecode
+Make bytecode interpreter bootable
+Make compass-to-ASM compiler
+Make in-place compass-to-ASM compiler

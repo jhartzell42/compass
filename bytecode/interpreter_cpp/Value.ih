@@ -1,0 +1,231 @@
+#ifndef BYTECODE_VALUE_IH
+#define BYTECODE_VALUE_IH
+
+#include <string.h>
+#include <iostream>
+
+#include "debug.h"
+#include "Value.h"
+#include "Block.h"
+#include "Object.h"
+#include "globals.h"
+#include "file.h"
+#include "exec.h"
+#include "gc.h"
+
+inline GCAllocation *
+Value::get_any_gc_reference() const {
+    if(reference && on_heap) {
+	return heap_object;
+    } else if(block) {
+	return method_invocation;
+    } else {
+	return 0;
+    }
+}
+
+inline void
+Value::invoke_garbage_collection_method(GCMemFn ch) const {
+    GCAllocation *alloc = get_any_gc_reference();
+    if(alloc) {
+	(alloc->*ch)();
+    }
+}
+
+inline void
+Value::perform_inc() {
+    GCAllocation *alloc = get_any_gc_reference();
+    if(alloc) {
+	alloc->ref();
+    }
+}
+
+inline void
+Value::perform_dec() {
+    GCAllocation *alloc = get_any_gc_reference();
+    if(alloc) {
+	alloc->deref();
+    }
+}
+
+inline
+Value::Value(int64_t new_i)
+    : reference(false), block(false), on_heap(false), i(new_i) {
+    }
+
+inline
+Value::Value(int new_i)
+    : reference(false), block(false), on_heap(false), i(new_i) {
+    }
+
+
+inline 
+Value::Value(GCReference<ObjectAllocation> &new_heap_object,
+	     secure_t new_securelevel,
+	     bool new_writability) 
+: reference(true), on_heap(true), securelevel(new_securelevel),
+    writability(new_writability), block(false),
+    heap_object(new_heap_object.get_raw_pointer()) {
+	perform_inc();
+    }
+
+inline
+Value::Value(ObjectAllocation *new_heap_object,
+	     secure_t new_securelevel,
+	     bool new_writability)
+: reference(true), on_heap(true), securelevel(new_securelevel),
+    block(false), writability(new_writability),
+    heap_object(new_heap_object) {
+	perform_inc();
+    }
+
+inline
+Value::Value(Location<Block> new_code,
+	     GCReference<MethodInvocation> closure)
+: block(true), code(new_code), reference(false),on_heap(false),
+    method_invocation(closure.get_raw_pointer()) {
+	perform_inc();
+    }
+
+inline Object &
+Value::get_bytecode_object() const {
+    assert(reference);
+    if(on_heap) {
+	return *heap_object->contents;
+    } else {
+	return *image_object;
+    }
+}
+
+inline Object &
+Value::operator*() const {
+    return get_bytecode_object();
+}
+
+inline Object *
+Value::operator->() const {
+    return &get_bytecode_object();
+}
+
+inline 
+Value::operator int64_t() const {
+    assert(!reference && !block);
+    return i;
+}
+
+inline
+Value::Value(const Value &old) {
+    memcpy(this, &old, sizeof(Value));
+    perform_inc();
+}
+
+inline Value &
+Value::operator=(const Value &rs) {
+    GCAllocation *old_alloc = get_any_gc_reference();
+    memmove(this, &rs, sizeof(Value));
+    perform_inc();
+    if(old_alloc) {
+	old_alloc->deref();
+    }
+    return *this;
+}
+
+inline bool
+Value::operator==(const Value &other) const {
+    return writability == other.writability &&
+	on_heap == other.on_heap &&
+	!block && !other.block &&
+	i == other.i;
+}
+
+inline bool
+Value::operator!=(const Value &other) const {
+    return !(*this == other);
+}
+
+inline bool
+Value::is_integer() const {
+    return !reference && !block;
+}
+
+inline bool
+Value::is_reference() const {
+    assert(!block || !reference);
+    return reference;
+}
+
+inline bool
+Value::is_block() const {
+    assert(!block || !reference);
+    return block;
+}
+
+inline bool
+Value::is_on_heap() const {
+    return reference && on_heap;
+}
+
+inline Location<Object>
+Value::get_object_location() const {
+    assert(reference && !on_heap);
+    return image_object;
+}
+
+inline secure_t
+Value::get_securelevel() const {
+    return securelevel;
+}
+
+inline bool
+Value::get_writability() const {
+    return writability;
+}
+
+inline Location<Block>
+Value::get_block_code() const {
+    assert(block && !reference);
+    return code;
+}
+
+inline MethodInvocation *
+Value::get_closure_method_invocation() const {
+    assert(block && !reference);
+    return method_invocation;
+}
+
+inline std::ostream &
+operator<<(std::ostream &os, Value val) {
+    if(val.is_integer()) {
+	os << (int64_t)val;
+    } else if(val.is_reference()) {
+	if(val.is_on_heap()) {
+	    os << &*val;
+	} else {
+	    os << val.get_object_location();
+	}
+	os << " (" << val.get_securelevel() << "," <<
+	    (val.get_writability()?"rw":"ro") << ")";
+    } else if(val.is_block()) {
+	os << val.get_block_code() << "(" <<
+	    val.get_closure_method_invocation() << ")";
+    }
+    return os;
+}
+
+inline
+Value::Value(bool b) {
+    memcpy(this,b?&*bytecode_true:&*bytecode_false,sizeof(Value));
+    perform_inc();
+}
+
+inline void
+Value::set_writability(bool new_writability) {
+    assert(reference);
+    writability = new_writability;
+}
+
+inline void
+Value::set_securelevel(secure_t new_securelevel) {
+    securelevel = new_securelevel;
+}
+#endif

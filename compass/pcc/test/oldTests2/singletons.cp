@@ -1,0 +1,84 @@
+needle 2007;
+class $Object ($Object);
+$Object messageNotUnderstood: @a {
+    infiniLoop "ha ha what cruelty. this segfaults."
+}
+
+$Object class new {
+    ^basicNew
+}
+
+$Object class main {
+    @temp := ($IO readInt); 
+    { @foo -- (@foo+@temp)printInt;} (@temp);
+    @foo printInt;
+    ^@foo
+}
+
+class $SmallInteger($Object);
+
+$SmallInteger #+ #SmallIntegerAdd;
+$SmallInteger #- #SmallIntegerSub;
+$SmallInteger #* #SmallIntegerMul;
+$SmallInteger #/ #SmallIntegerDiv;
+$SmallInteger #negate #SmallIntegerNegate;
+
+$SmallInteger class new {
+    ^0
+}
+
+singleton $IO($Object);
+
+$IO #readInt #SimpleKeyboardIOReadInt;
+$IO #readChar #SimpleKeyboardIOReadChar;
+$SmallInteger #printInt #SimpleKeyboardIOPrintInt;
+$SmallInteger #printChar #SimpleKeyboardIOPrintChar;
+
+class $Block($Object);
+
+$Block #evaluate #BlockEvaluate;
+$Block #() #BlockEvaluate;
+
+class $Boolean($Object);
+class $true($Boolean);
+class $false($Boolean);
+
+$Boolean new {
+    "what the frik are you doing? booleans aren't classes really, they're
+    singletons. Of course, we could use some singleton support."
+    exceptionsGalore
+}
+
+$true class ? @trueBlock // _ {
+    ^@trueBlock()
+}
+
+$false class?_//@falseBlock {
+    ^@falseBlock()
+}
+
+$Object true {
+    ^$true
+}
+
+$Object false {
+    ^$false
+}
+
+class $Nil($Object);
+$Nil class isNil {
+    ^true
+}
+
+$Object isNil {
+    ^false
+}
+
+$Block -> @otherBlock {
+    ()?{
+	@otherBlock();
+	-> @otherBlock;
+    }//{
+	^
+    }
+}

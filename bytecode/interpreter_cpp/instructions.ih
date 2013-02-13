@@ -1,0 +1,512 @@
+#ifndef BYTECODE_INSTRUCTIONS_H
+#define BYTECODE_INSTRUCTIONS_H
+
+#include "Block.h"
+#include "Object.h"
+#include "Value.h"
+#include "globals.h"
+#include "exec.h"
+
+inline void
+fail() {
+    std::cout << "*fatal error -- unknown instruction*" << std::endl;
+    exit(1);
+}
+
+inline ActivationRecord *
+ActivationRecord::call(Location<Block> blk,
+		       int argc,
+		       const Value &receiver) {
+    assert(blk);
+
+    if(blk->type) {
+	return call_builtin(blk, argc, receiver);
+    }
+    assert(stack.end() - argc >= stack.begin());
+    MethodInvocation *meth =
+	new MethodInvocation(this, stack.end() - argc, stack.end());
+    stack.erase(stack.end() - argc, stack.end());
+    return new ActivationRecord(blk, receiver, meth, 0, false, true, 0);
+}
+
+inline ActivationRecord *
+ActivationRecord::method_call(selector_t sel,
+			      int argc,
+			      const Value &receiver) {
+    MethodTable *meth;
+    if(receiver.is_integer()) {
+	meth = smallinteger_mtable.get_pointer();
+    } else if(receiver.is_block()) {
+	meth = block_object_mtable.get_pointer();
+    } else { // reference
+	meth = &receiver->get_method_table();
+    }
+    return call((*meth)[sel],argc,receiver);
+}
+
+inline ActivationRecord *
+ActivationRecord::do_return(Value to_return) {
+    if(!meth->valid_return) {
+	// XXX throw exception instead of crashing
+	std::cout << "*fatal error -- multiple returns attempted*" <<
+	    std::endl;
+	exit(2);
+    }
+    meth->valid_return = false;
+    if(!meth->ret) {
+	// successful exit
+	exit(0);
+    }
+    meth->ret->push(to_return);
+    return meth->ret.get_raw_pointer();
+}
+
+inline ActivationRecord *
+ActivationRecord::execute_instruction() {
+#if DEBUG>=3
+    display_current_instruction(std::cout,*code,pos);
+#endif
+    switch(code->instructions[pos.current_instruction++]) {
+	case 0x00: //FINISH
+	    {
+		if(block_ret) {
+		    ActivationRecord *res = block_ret.get_raw_pointer();
+		    res->push(pop());
+		    return res;
+		} else { // bytecode block repeat set-up
+		    fail();
+		}
+	    }
+	case 0x01: //Alloc
+	    {
+		int64_t i = code->get_integer_argument(pos);
+		push(ObjectAllocation::allocate_object(i));
+		break;
+	    }
+	case 0x02: //AllocInd
+	    {
+		push(ObjectAllocation::allocate_object(pop()));
+		break;
+	    }
+	case 0x03: //Arg  
+	    {
+		push(meth->args[code->get_integer_argument(pos)]);
+		break;
+	    }
+	case 0x04: //Block
+	    {
+		push(Value(code->get_block_argument(pos),meth));
+		break;
+	    }
+	case 0x05: //BlockArg
+	    {
+		push(block_args[code->get_integer_argument(pos)]);
+		break;
+	    }
+	case 0x06: //Call 
+	    {
+		int64_t argc = code->get_integer_argument(pos);
+		Location<Block> blk = code->get_block_argument(pos);
+		return call(blk,argc,pop());
+	    }
+	case 0x07: //ChMTable
+	    {
+		pop()->
+		    set_method_table(code->get_method_table_argument(pos));
+		break;
+	    }
+	case 0x08: //Dup  
+	    {
+		push(top_of_stack());
+		break;
+	    }
+	case 0x09: //Equals 
+	    fail();
+	case 0x0A: //False
+	    {
+		push(false);
+		break;
+	    }
+	case 0x0B: //Global 
+	    {
+		push(*code->get_global_argument(pos));
+		break;
+	    }
+	case 0x0C: //Inst 
+	    {
+		set_top_of_stack((*top_of_stack())[
+				 code->get_integer_argument(pos)]);
+		break;
+	    }
+	case 0x0D: //InstInd
+	    {
+		int64_t n = pop();
+		set_top_of_stack((*top_of_stack())[n]);
+		break;
+	    }
+	case 0x0E: //Int  
+	    {
+		push((int64_t)code->get_integer_argument(pos));
+		break;
+	    }
+	case 0x0F: //IsRw 
+	    {
+		set_top_of_stack(top_of_stack().get_writability());
+		break;
+	    }
+	case 0x10: //MCall
+	    {
+		int64_t argc = code->get_integer_argument(pos);
+		selector_t sel = code->get_integer_argument(pos);
+		return method_call(sel,argc,pop());
+	    }
+	case 0x11: //Nil  
+	    {
+		push(*bytecode_nil);
+		break;
+	    }
+	case 0x12: //Pop  
+	    {
+		pop();
+		break;
+	    }
+	case 0x13: //RefEquals
+	    {
+		Value v1 = pop();
+		top_of_stack() = top_of_stack() == v1;
+		break;
+	    }
+	case 0x14: //Return 
+	    {
+		return do_return(pop());
+	    }
+	case 0x15: //Ro   
+	    {
+		top_of_stack().set_writability(false);
+		break;
+	    }
+	case 0x16: //Rw   
+	    {
+		top_of_stack().set_writability(true);
+		break;
+	    }
+	case 0x17: //SChMTable
+	    {
+		self->
+		    set_method_table(code->get_method_table_argument(pos));
+		break;
+	    }
+	case 0x18: //Secure 
+	    fail();
+	case 0x19: //Self 
+	    {
+		push(self);
+		break;
+	    }
+	case 0x1A: //SInst
+	    {
+		push((*self)[code->get_integer_argument(pos)]);
+		break;
+	    }
+	case 0x1B: //SInstInd
+	    {
+		int n = top_of_stack();
+		set_top_of_stack((*self)[n]);
+		break;
+	    }
+	case 0x1C: //SIsRw
+	    {
+		push(self.get_writability());
+		break;
+	    }
+	case 0x1D: //Sl
+	    {
+		set_top_of_stack((int64_t)top_of_stack().get_securelevel());
+		break;
+	    }
+	case 0x1E: //SMCall 
+	    {
+		int64_t argc = code->get_integer_argument(pos);
+		selector_t sel = code->get_integer_argument(pos);
+		return method_call(sel, argc, self);
+	    }
+	case 0x1F: //SReturn
+	    {
+		return do_return(self);
+	    }
+	case 0x20: //SRo
+	    {
+		push(self);
+		top_of_stack().set_writability(false);
+		break;
+	    }
+	case 0x21: //SRw  
+	    {
+		push(self);
+		top_of_stack().set_writability(true);
+		break;
+	    }
+	case 0x22: //SSecure
+	    fail();
+	case 0x23: //SSl  
+	    {
+		push((int64_t)self.get_securelevel());
+		break;
+	    }
+	case 0x24: //StoreGlobal
+	    {
+		Location<Value> glb = code->get_global_argument(pos);
+		*glb = pop();
+		break;
+	    }
+	case 0x25: //StoreInst
+	    {
+		Value obj = pop();
+		(*obj)[code->get_integer_argument(pos)] = pop();
+		break;
+	    }
+	case 0x26: //StoreInstInd
+	    {
+		Value obj = pop();
+		int64_t n = pop();
+		(*obj)[n] = pop();
+		break;
+	    }
+	case 0x27: //StoreTemp
+	    {
+		meth->temps[code->get_integer_argument(pos)] = pop();
+		break;
+	    }
+	case 0x28: //SStoreInst 
+	    {
+		(*self)[code->get_integer_argument(pos)] = pop();
+		break;
+	    }
+	case 0x29: //SStoreInstInd
+	    {
+		int64_t n = pop();
+		(*self)[n] = pop();
+		break;
+	    }
+	case 0x2A: //Swap 
+	    {
+#if DEBUG
+		std::cout << "Warning: using deprecated instruction Swap"
+		    << std::endl;
+#endif
+		Value a = pop();
+		Value b = pop();
+		push(a);
+		push(b);
+		break;
+	    }
+	case 0x2B: //Temp 
+	    {
+		push(meth->temps[code->get_integer_argument(pos)]);
+		break;
+	    }
+	case 0x2C: //Temporaries
+	    {
+		meth->allocate_temps(code->get_integer_argument(pos));
+		break;
+	    }
+	case 0x2D: //True 
+	    {
+		push(true);
+		break;
+	    }
+	case 0x2E: //TSelf
+	    {
+		Value tself = self;
+		tself.set_writability(true);
+		tself.set_securelevel(0);
+		push(tself);
+		break;
+	    }
+	case 0x2F: //TSMCall
+	    {
+		Value tself = self;
+		tself.set_writability(true);
+		tself.set_securelevel(0);
+		int argc = code->get_integer_argument(pos);
+		selector_t sel = code->get_integer_argument(pos);
+		method_call(sel, argc, tself);
+		break;
+	    }
+	case 0x30: //AllocFromArgs
+	    {
+		size_t sz = meth->args.size();
+		Value alloc = ObjectAllocation::allocate_object(sz);
+		for(int i = 0; i < meth->args.size(); ++i) {
+		    (*alloc)[i] = meth->args[i];
+		}
+		push(alloc);
+		break;
+	    }
+	case 0x31: //StoreArg
+	    {
+		meth->args[code->get_integer_argument(pos)] = pop();
+		break;
+	    }
+	case 0x32: //StoreBlockArg
+	    {
+		block_args[code->get_integer_argument(pos)] = pop();
+		break;
+	    }
+	case 0x33: //BlockEvaluate
+	case 0x34: //Throw
+	    fail();
+	case 0x35: //BlockArgs
+	    {
+		int start = code->get_integer_argument(pos);
+		int end = code->get_integer_argument(pos);
+		assert(block_args.size() >= end - start &&
+		       meth->temps.size() > end && start >= 0 &&
+		       end >= start);
+		for(int i = start; i < end; i++) {
+		    meth->temps[i] = block_args[i - start];
+		}
+		break;
+	    }
+	case 0x36: //Add  
+	    {
+		int argc = code->get_integer_argument(pos);
+		selector_t sel = code->get_integer_argument(pos);
+		assert(argc == 1);
+		int sz = stack.size();
+		if(stack[sz-1].is_integer() && stack[sz-2].is_integer()) {
+		    int64_t val = pop();
+		    top_of_stack() = top_of_stack() + val;
+		    break;
+		} else {
+		    return method_call(argc,sel,pop());
+		}
+	    }
+	case 0x37: //Subtract
+	    {
+		int argc = code->get_integer_argument(pos);
+		selector_t sel = code->get_integer_argument(pos);
+		assert(argc == 1);
+		int sz = stack.size();
+		if(stack[sz-1].is_integer() && stack[sz-2].is_integer()) {
+		    int64_t val = pop();
+		    set_top_of_stack(val - top_of_stack());
+		    break;
+		} else {
+		    return method_call(argc,sel,pop());
+		}
+	    }
+	case 0x38: //Multiply
+	    {
+		int argc = code->get_integer_argument(pos);
+		selector_t sel = code->get_integer_argument(pos);
+		assert(argc == 1);
+		int sz = stack.size();
+		if(stack[sz-1].is_integer() && stack[sz-2].is_integer()) {
+		    int64_t val = pop();
+		    set_top_of_stack(val * top_of_stack());
+		    break;
+		} else {
+		    return method_call(argc,sel,pop());
+		}
+	    }
+	case 0x39: //Divide 
+	    {
+		int argc = code->get_integer_argument(pos);
+		selector_t sel = code->get_integer_argument(pos);
+		assert(argc == 1);
+		int sz = stack.size();
+		if(stack[sz-1].is_integer() && stack[sz-2].is_integer()) {
+		    int64_t val = pop();
+		    set_top_of_stack(val / top_of_stack());
+		    break;
+		} else {
+		    return method_call(argc,sel,pop());
+		}
+	    }
+	case 0x3A: //Mod  
+	    {
+		int argc = code->get_integer_argument(pos);
+		selector_t sel = code->get_integer_argument(pos);
+		assert(argc == 1);
+		int sz = stack.size();
+		if(stack[sz-1].is_integer() && stack[sz-2].is_integer()) {
+		    int64_t val = pop();
+		    set_top_of_stack(val % top_of_stack());
+		    break;
+		} else {
+		    return method_call(argc,sel,pop());
+		}
+	    }
+	case 0x3B: //Greater
+	    {
+		int argc = code->get_integer_argument(pos);
+		selector_t sel = code->get_integer_argument(pos);
+		assert(argc == 1);
+		int sz = stack.size();
+		if(stack[sz-1].is_integer() && stack[sz-2].is_integer()) {
+		    int64_t val = pop();
+		    set_top_of_stack(val > top_of_stack());
+		    break;
+		} else {
+		    return method_call(argc,sel,pop());
+		}
+	    }
+	case 0x3C: //Less 
+	    {
+		int argc = code->get_integer_argument(pos);
+		selector_t sel = code->get_integer_argument(pos);
+		assert(argc == 1);
+		int sz = stack.size();
+		if(stack[sz-1].is_integer() && stack[sz-2].is_integer()) {
+		    int64_t val = pop();
+		    set_top_of_stack(val < top_of_stack());
+		    break;
+		} else {
+		    return method_call(argc,sel,pop());
+		}
+	    }
+	case 0x3D: //AllocByteArrayInd XXX remove
+	    {
+		int sz = pop();
+		ByteArray arr =
+		    ByteArray(new char[sz], sz);
+		push(ObjectAllocation::allocate_object(arr));
+		break;
+	    }
+	case 0x3E: //StoreIntoByteArray XXX remove
+	    {
+		Value arr_val = pop();
+		ByteArray arr = arr_val->get_byte_array();
+		int to_store = pop();
+		int loc = code->get_integer_argument(pos);
+		((char*)arr.start)[loc] = to_store;
+		break;
+	    }
+	case 0x3F: //IndexByteArrayInd
+	    {
+		int index = pop();
+		ByteArray arr = pop()->get_byte_array();
+		push(arr[index]);
+		break;
+	    }
+	case 0x40: //Between          
+	case 0x41: //Not              
+	case 0x42: //IntegerEquals    
+	    fail();
+	case 0x43: //StoreRetVal      
+	    {
+		meth->res = pop();
+		break;
+	    }
+	case 0x44: //RetValReturn     
+	    {
+		return do_return(meth->res);
+	    }
+	default:
+	    fail();
+    }
+    return this;
+}
+
+#endif

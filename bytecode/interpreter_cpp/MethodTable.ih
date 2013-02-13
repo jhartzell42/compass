@@ -1,0 +1,28 @@
+#ifndef BYTECODE_METHOD_TABLE_IH
+#define BYTECODE_METHOD_TABLE_IH
+
+#include "MethodTable.h"
+#include "debug.h"
+
+inline
+MethodTable::MethodTable() {
+    assert(false);
+}
+
+inline const Location<Block> &
+MethodTable::operator[](selector_t sel) const {
+    int i = sel&size_mask;
+    if(entries[i].sel == sel) {
+	return entries[i].block;
+    }
+    for(i = (sel + 1) & size_mask;
+	    entries[i].block;
+	    i = (i + 1) & size_mask) {
+	if(entries[i].sel == sel) {
+	    return entries[i].block;
+	}
+    }
+    return default_block;
+}
+
+#endif

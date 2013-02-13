@@ -1,0 +1,11 @@
+* Document binary bytecode
+* Update assembly docs with additional built-in methods.
+* Write C++ version of bytecode interpreter
+* Write disassembler/debugger
+* Include selector debugging information
+* Add enough debugging details that the whole file can be disassembled
+* Add identity-hash byte
+* Create file format for storing authoritative information on each of the
+instructions, from which all the various docs and code can be generated
+* Do cleanliness audit on assembler/interpreter
+* Remove StoreIntoByteArray, AllocateByteArrayInd

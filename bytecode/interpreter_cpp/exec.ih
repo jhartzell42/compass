@@ -1,0 +1,199 @@
+#ifndef BYTECODE_EXEC_IH
+#define BYTECODE_EXEC_IH
+#include "exec.h"
+#include "Value.h"
+#include "Object.h"
+
+inline void
+MethodInvocation::for_each_child(GCMemFn ch) {
+    for(std::vector<Value>::iterator it = args.begin();
+	    it != args.end();
+	    ++it) {
+	it->invoke_garbage_collection_method(ch);
+    }
+    for(std::vector<Value>::iterator it = temps.begin();
+	    it != temps.end();
+	    ++it) {
+	it->invoke_garbage_collection_method(ch);
+    }
+    res.invoke_garbage_collection_method(ch);
+}
+
+inline void
+MethodInvocation::set_all_refs_to_zero() {
+    for(std::vector<Value>::iterator it = args.begin();
+	    it != args.end();
+	    ++it) {
+	*it = 0;
+    }
+    for(std::vector<Value>::iterator it = temps.begin();
+	    it != temps.end();
+	    ++it) {
+	*it = 0;
+    }
+    res = 0;
+}
+
+template <class InputIterator>
+inline
+MethodInvocation::MethodInvocation(ActivationRecord *new_ret,
+				   InputIterator args_begin,
+				   InputIterator args_end)
+: ret(new_ret),
+    args(args_begin,args_end),
+    valid_return(true) {
+    }
+
+inline
+MethodInvocation::MethodInvocation(ActivationRecord *new_ret)
+    : ret(new_ret), valid_return(true) {
+    }
+
+inline
+ActivationRecord::ActivationRecord(Location<Block> new_code,
+				   Value receiver,
+				   GCReference<MethodInvocation> new_meth,
+				   GCReference<ActivationRecord> new_b_ret,
+				   bool new_is_repeat,
+				   bool new_is_method,
+				   Value new_catch_block) 
+: code(new_code), self(receiver), meth(new_meth),
+block_ret(new_b_ret), is_repeat(new_is_repeat), is_method(new_is_method),
+catch_block(new_catch_block),
+#if DEBUG
+    deleted(false)
+#endif
+{
+    pos.current_instruction = pos.current_operand = 0;
+}
+
+template <class InputIterator>
+inline
+ActivationRecord::ActivationRecord(Location<Block> new_code,
+				   Value receiver,
+				   GCReference<MethodInvocation> new_meth,
+				   GCReference<ActivationRecord> new_b_ret,
+				   bool new_is_repeat,
+				   bool new_is_method,
+				   Value new_catch_block,
+				   InputIterator block_args_start,
+				   InputIterator block_args_end)
+: code(new_code), self(receiver), meth(new_meth),
+block_ret(new_b_ret), is_repeat(new_is_repeat), is_method(new_is_method),
+catch_block(new_catch_block), block_args(block_args_start,
+					 block_args_end),
+#if DEBUG
+    deleted(false)
+#endif
+{
+    pos.current_instruction = pos.current_operand = 0;
+}
+
+inline void
+bytecode_run(GCReference<ActivationRecord> curr) {
+    while(1) {
+	ActivationRecord *new_curr = curr->execute_instruction();
+	if(new_curr != curr.get_raw_pointer()) {
+	    curr = new_curr;
+#if DEBUG>=3
+	    std::cout << curr->code << std::endl;
+#endif
+	}
+    }
+}
+
+inline void
+ActivationRecord::for_each_child(GCMemFn ch) {
+#if DEBUG
+    assert(!deleted);
+#endif
+    for(std::vector<Value>::iterator it = block_args.begin();
+	    it != block_args.end();
+	    ++it) {
+	it->invoke_garbage_collection_method(ch);
+    }
+    for(std::vector<Value>::iterator it = stack.begin();
+	    it != stack.end();
+	    ++it) {
+	it->invoke_garbage_collection_method(ch);
+    }
+    self.invoke_garbage_collection_method(ch);
+    catch_block.invoke_garbage_collection_method(ch);
+    if(meth) {
+	((meth.get_raw_pointer())->*ch)();
+    }
+    if(block_ret) {
+	((block_ret.get_raw_pointer())->*ch)();
+    }
+}
+
+inline void
+ActivationRecord::set_all_refs_to_zero() {
+    for(std::vector<Value>::iterator it = block_args.begin();
+	    it != block_args.end();
+	    it++) {
+	*it = 0;
+    }
+    for(std::vector<Value>::iterator it = stack.begin();
+	    it != stack.end();
+	    it++) {
+	*it = 0;
+    }
+    meth = 0;
+    block_ret = 0;
+}
+
+inline void
+ActivationRecord::push(const Value &to_push) {
+#if DEBUG>=3
+    std::cout << "Pushing: " << to_push << std::endl;
+#endif
+    stack.push_back(to_push);
+}
+
+inline Value
+ActivationRecord::pop() {
+    Value to_return = stack.back();
+#if DEBUG>=3
+    std::cout << "Popping: " << to_return << std::endl;
+#endif
+    stack.pop_back();
+    return to_return;
+}
+
+inline const Value&
+ActivationRecord::top_of_stack() const {
+#if DEBUG>=3
+    std::cout << "Peeking: " << stack.back() << std::endl;
+#endif
+    return stack.back();
+}
+
+inline Value&
+ActivationRecord::top_of_stack() {
+#if DEBUG>=3
+    std::cout << "Peeking: " << stack.back() << std::endl;
+#endif
+    return stack.back();
+}
+
+inline void
+ActivationRecord::set_top_of_stack(Value val) {
+#if DEBUG>=3
+    std::cout << "Replacing top of stack: " << val << std::endl;
+#endif
+    top_of_stack() = val;
+}
+
+inline void
+MethodInvocation::allocate_temps(int n) {
+    temps.resize(n);
+}
+
+inline
+ActivationRecord::~ActivationRecord() {
+#if DEBUG
+    deleted = true;
+#endif
+}
+#endif

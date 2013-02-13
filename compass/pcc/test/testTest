@@ -1,0 +1,14 @@
+#!/bin/sh
+grep " \* prints " test/$2.cp | sed "s/ \* prints //" > test/$2.good
+grep " \* reads " test/$2.cp | sed "s/ \* reads //" > test/$2.in
+if (cd test; ./runTest.$1 $2) > test/$2.res < test/$2.in
+then diff test/$2.good test/$2.res
+else cat test/$2.res
+fi
+
+# clean up
+#rm test/$2.sc
+#rm -f test/$2.sco
+#rm test/$2.res
+#rm test/$2.good
+rm test/$2.in
