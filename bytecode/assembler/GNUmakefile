@@ -5,7 +5,7 @@ FILES = hash_table.o memory_region.o util.o block.o global.o object.o \
 default: all
 all: assembler
 assembler: $(FILES)
-	${CC} ${LDFLAGS} -o assembler $(FILES)
+	${CC} -o assembler $(FILES) ${LDFLAGS}
 %.d: %.c
 	        $(SHELL) -ec '$(CC) -M $(CPPFLAGS) $< \
 		    | sed '\''s/\($*\)\.o[ :]*/\1.o $@ : /g'\'' > $@; \
