@@ -8,3 +8,4 @@ gc6.7
 *.o
 *.d
 bytecode/assembler/assembler
+bytecode/interpreter/interpreter
