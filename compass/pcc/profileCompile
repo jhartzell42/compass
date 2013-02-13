@@ -1,0 +1,2 @@
+#!/bin/sh
+python2.5 -m cProfile lite.py test/$1.cp `find ../compass/runtime -name *.cp`

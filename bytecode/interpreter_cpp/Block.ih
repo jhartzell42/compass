@@ -1,0 +1,97 @@
+#ifndef BYTECODE_BLOCK_IH
+#define BYTECODE_BLOCK_IH
+
+#include "Block.h"
+#include "debug.h"
+#include "Value.h"
+#include "MethodTable.h"
+
+#include <iostream>
+
+inline
+Block::Block() {
+    assert(false);
+}
+
+inline BlockPosition
+display_current_instruction(std::ostream &os,
+			    const Block &blk,
+			    BlockPosition pos) {
+    int inst = blk.instructions[pos.current_instruction++];
+    os << Block::bytecodes[inst] << " ";
+    for(int j = 0; Block::operand_descriptions[inst][j]; j++) {
+	uint64_t operand =
+	    blk.operands->operands[pos.current_operand++];
+	OperandType descr =
+	    Block::operand_descriptions[inst][j];
+	// os << "(" << descr << ") " << std::flush;
+	if(descr == INT || descr == SELECTOR) {
+	    os << operand;
+	} else if(descr == BLOCK) {
+	    Location<Block> blk;
+	    blk.set_offset(operand);
+	    os << blk;
+	} else if(descr == GLOBAL) {
+	    Location<Value> glb;
+	    glb.set_offset(operand);
+	    os << glb;
+	} else if(descr == METHOD_TABLE) {
+	    Location<MethodTable> tab;
+	    tab.set_offset(operand);
+	    os << tab;
+	}
+	os << " ";
+    }
+    os << std::endl;
+    return pos;
+}
+
+inline BlockPosition
+start_position() {
+    BlockPosition pos;
+    pos.current_instruction = 0;
+    pos.current_operand = 0;
+    return pos;
+}
+
+inline std::ostream &
+operator<<(std::ostream &os, const Block &blk) {
+    BlockPosition pos = start_position();
+    switch(blk.type) {
+	case 0:
+	    for(int i = 0; blk.instructions[i]; i++) {
+		pos = display_current_instruction(os,blk,pos);
+	    }
+	    break;
+	default:
+	    os << "Unknown Method Type: " << blk.type << std::endl;
+	    break;
+    }
+}
+
+inline Location<Value>
+Block::get_global_argument(BlockPosition &pos) {
+    Location<Value> res;
+    res.set_offset(get_integer_argument(pos));
+    return res;
+}
+
+inline Location<Block>
+Block::get_block_argument(BlockPosition &pos) {
+    Location<Block> res;
+    res.set_offset(get_integer_argument(pos));
+    return res;
+}
+
+inline Location<MethodTable>
+Block::get_method_table_argument(BlockPosition &pos) {
+    Location<MethodTable> res;
+    res.set_offset(get_integer_argument(pos));
+    return res;
+}
+
+inline uint64_t
+Block::get_integer_argument(BlockPosition &pos) {
+    return operands->operands[pos.current_operand++];
+}
+#endif

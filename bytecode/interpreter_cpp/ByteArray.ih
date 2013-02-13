@@ -1,0 +1,88 @@
+#ifndef BYTECODE_BYTE_ARRAY_IH
+#define BYTECODE_BYTE_ARRAY_IH
+
+#include "ByteArray.h"
+#include <stdlib.h>
+
+inline void
+incref(ByteArrayAllocation *alloc) {
+    if(alloc) {
+	++alloc->refs;
+    }
+}
+
+inline void
+decref(ByteArrayAllocation *alloc) {
+    if(alloc) {
+	--alloc->refs;
+	if(alloc->refs == 0) {
+	    free(alloc);
+	}
+    }
+}
+
+inline ByteArrayAllocation *
+alloc_byte_array(size_t sz) {
+    ByteArrayAllocation *res = 
+	(ByteArrayAllocation *)malloc(sizeof(ByteArrayAllocation) + sz);
+    res->refs = 0;
+    return res;
+}
+
+inline
+ByteArray::ByteArray(const char *cstring, int len) 
+    : start(cstring), end(cstring + len), alloc(0) {
+    }
+
+inline
+ByteArray::ByteArray(ByteArrayAllocation *new_alloc, int off1, int off2) {
+    alloc = new_alloc;
+    start = alloc->arr + off1;
+    end = alloc->arr + off2;
+    incref(alloc);
+}
+
+inline
+ByteArray::ByteArray(const ByteArray &old_ref) {
+    memcpy((void*)this,(const void*)&old_ref,sizeof(ByteArray));
+    incref(alloc);
+}
+
+inline
+ByteArray::ByteArray() {
+    start = end = 0;
+    alloc = 0;
+}
+
+inline ByteArray
+byte_array_slice(const ByteArray &old, int slice_begin, int slice_end) {
+    ByteArray res;
+    assert(slice_begin >= 0 && slice_begin <= slice_end);
+    assert(old.start + slice_end <= old.end);
+    res.start = old.start + slice_begin;
+    res.end = old.start + slice_end;
+    res.alloc = old.alloc;
+    incref(res.alloc);
+    return res;
+}
+
+inline
+ByteArray::~ByteArray() {
+    decref(alloc);
+}
+
+inline 
+ByteArray::operator std::string() const {
+    return std::string(start,end);
+}
+
+inline const char&
+ByteArray::operator[](int index) const {
+    return start[index];
+}
+
+inline int
+ByteArray::size() const {
+    return end - start;
+}
+#endif

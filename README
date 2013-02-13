@@ -1,0 +1,17 @@
+Compass is an implementation of a Smalltalk-like programming language. This
+iteration does not implement many of the planned improvements over Smalltalk,
+such as package management, private methods, and "securelevels".
+
+The compiler is implemented in Python, and the bytecode interpreter is in C.
+The test cases are in compass/pcc/test, and can be run by running
+"./testAll interpreter" in that directory, once the interpreter and assembler
+have been compiled (by running "make" in their respective directories under
+"bytecode").
+
+The test scripts are the best examples of the Compass programming language,
+and use the primitive runtime library included in the "compass/runtime"
+directory.
+
+Notice that some of the tests are supposed to throw exceptions, but the test
+suite incorrectly prints the resultant error messages. All such tests are
+commented as throwing an exception, and are named "exception*.cp".

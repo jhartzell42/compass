@@ -1,0 +1,6 @@
+* Regression tests to watch for...
+    / instance variables not working.
+    / instance variable inheritance not working.
+    * mixins not mixing in right.
+    * (expression,)
+    * Blocks with many arguments: a { b; c; d: e }

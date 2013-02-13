@@ -1,0 +1,22 @@
+TODO for Needle-final:
+* Write exceptions.
+* Allow public/private/abstract (but ignore for right now)
+* Create #class method in compiler.
+* Allow (but ignore) securelevel method syntax.
+* Add test case where the ignored argument has side effects.
+* Write aliasing.
+* Write needle test cases (especially testing inheritence, ivars, and mixins)
+* Write needle automated tester
+* Write needle runtime
+* Add globals to needle
+* Add support for primitive arrays to needle/bytecode runtime.
+This probably involves writing some methods in Compass, and others direct
+in bytecode.
+* Add support for array literals.
+* Add full support for #()
+* Implement package-declaration-ignoring multifile.
+* Make it compatible with Dan's runtime.
+* Begin devving the Compass compiler for Compass.
+* Fix how receiver gets eval'd last.
+* Implement arguments to blocks and methods other than @ and _.
+* Implement freezing.

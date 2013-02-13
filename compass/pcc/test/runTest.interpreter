@@ -1,0 +1,6 @@
+#!/bin/sh
+cd ..
+python lite.py Test test/$1.cp `find ../runtime -name *.cp` > test/$1.sc
+../../bytecode/assembler/assembler test/$1.sc > test/$1.sco
+../../bytecode/interpreter/interpreter test/$1.sco
+exit $?

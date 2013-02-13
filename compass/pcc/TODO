@@ -1,0 +1,1 @@
+Fix bug where $SingleRange gets a species of $SingleRange instead of $ArrayList.
